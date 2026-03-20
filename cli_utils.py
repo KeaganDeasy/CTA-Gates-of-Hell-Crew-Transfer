@@ -220,3 +220,304 @@ def display_candidates(candidates):
     """Display formatted candidate list using existing format_candidate."""
     for i, cand in enumerate(candidates):
         print(format_candidate(i+1, cand))
+
+# ==========================================
+# ENHANCED SAVE FILE INTERACTION
+# ==========================================
+
+def browse_saves_directory(directory, show_modified=True):
+    """
+    Scans directory for .sav files and returns list with metadata.
+    
+    Args:
+        directory (str): Path to scan
+        show_modified (bool): Include _MOD_*.sav files
+        
+    Returns:
+        list[dict]: Files with keys: 'path', 'name', 'size', 'modified'
+    """
+    import os
+    import glob
+    from datetime import datetime
+    
+    if not os.path.exists(directory):
+        log_error(f"Directory not found: {directory}")
+        return []
+    
+    files = []
+    pattern = os.path.join(directory, "*.sav")
+    
+    for filepath in glob.glob(pattern):
+        filename = os.path.basename(filepath)
+        
+        # Skip modified files if show_modified is False
+        if not show_modified and "_MOD_" in filename:
+            continue
+        
+        try:
+            stat = os.stat(filepath)
+            size_mb = stat.st_size / (1024 * 1024)
+            modified = datetime.fromtimestamp(stat.st_mtime).strftime("%Y-%m-%d %H:%M")
+            
+            files.append({
+                'path': filepath,
+                'name': filename,
+                'size': f"{size_mb:.1f} MB",
+                'modified': modified,
+                'is_modified': "_MOD_" in filename
+            })
+        except (OSError, PermissionError):
+            continue
+    
+    # Sort by modification date (newest first)
+    files.sort(key=lambda x: os.path.getmtime(x['path']), reverse=True)
+    return files
+
+def select_file_interactive(file_list, allow_arrows=True):
+    """
+    Interactive file selection with optional arrow key navigation.
+    
+    Args:
+        file_list (list[dict]): Files from browse_saves_directory()
+        allow_arrows (bool): Enable arrow key navigation
+        
+    Returns:
+        str: Selected file path, or None if cancelled
+    """
+    if not file_list:
+        log_error("No save files found in directory")
+        return None
+    
+    # Try to import readchar for arrow navigation
+    arrow_nav = False
+    if allow_arrows:
+        try:
+            import readchar
+            arrow_nav = True
+        except ImportError:
+            log_warning("Arrow navigation disabled (install 'readchar' package)")
+            arrow_nav = False
+    
+    current_selection = 0
+    
+    while True:
+        clear_screen()
+        print_header("Available Save Files")
+        
+        # Display file list
+        for i, file_info in enumerate(file_list):
+            prefix = "→" if i == current_selection else " "
+            modified_tag = f" {Colors.WARNING}[MOD]{Colors.ENDC}" if file_info['is_modified'] else ""
+            
+            print(f" {prefix} [{i+1}] {file_info['name']} ({file_info['size']}, Modified: {file_info['modified']}){modified_tag}")
+        
+        print(f"\n{Colors.BOLD}Navigation:{Colors.ENDC}")
+        if arrow_nav:
+            print(f" • {Colors.BLUE}↑/↓{Colors.ENDC} arrows to move")
+            print(f" • {Colors.GREEN}Enter{Colors.ENDC} to select")
+            print(f" • {Colors.FAIL}Esc{Colors.ENDC} to cancel")
+        else:
+            print(f" • Enter number (1-{len(file_list)})")
+            print(f" • Enter {Colors.FAIL}0{Colors.ENDC} to cancel")
+        
+        if arrow_nav:
+            try:
+                key = readchar.readkey()
+                
+                if key == readchar.key.UP:
+                    current_selection = max(0, current_selection - 1)
+                    continue
+                elif key == readchar.key.DOWN:
+                    current_selection = min(len(file_list) - 1, current_selection + 1)
+                    continue
+                elif key == readchar.key.ENTER or key == '\r' or key == '\n':
+                    return file_list[current_selection]['path']
+                elif key == readchar.key.ESC:
+                    return None
+            except Exception:
+                # Fallback to numbered input on any error
+                arrow_nav = False
+        
+        # Numbered input (fallback or primary)
+        try:
+            choice = input(f"\n{Colors.BOLD}Select file (1-{len(file_list)}): {Colors.ENDC}").strip()
+            if not choice:
+                continue
+            
+            choice_num = int(choice)
+            if choice_num == 0:
+                return None
+            elif 1 <= choice_num <= len(file_list):
+                return file_list[choice_num - 1]['path']
+            else:
+                log_error(f"Please enter a number between 1 and {len(file_list)}")
+        except ValueError:
+            log_error("Please enter a valid number")
+        except KeyboardInterrupt:
+            return None
+
+def get_output_filename(source_path, default_pattern="{original}_MOD_{timestamp}"):
+    """
+    Interactive output filename selection with overwrite protection.
+    
+    Args:
+        source_path (str): Original .sav file path
+        default_pattern (str): Template for suggested name
+        
+    Returns:
+        str: Full path to output file (validated and confirmed)
+    """
+    import os
+    from datetime import datetime
+    
+    source_dir = os.path.dirname(source_path)
+    source_name = os.path.basename(source_path)
+    source_base = os.path.splitext(source_name)[0]
+    
+    # Generate default name from pattern
+    timestamp = datetime.now().strftime("%H%M")
+    default_name = default_pattern.replace("{original}", source_base).replace("{timestamp}", timestamp)
+    
+    # Ensure .sav extension
+    if not default_name.lower().endswith('.sav'):
+        default_name += '.sav'
+    
+    while True:
+        print_header("Output File Selection")
+        print(f"{Colors.BOLD}Source file:{Colors.ENDC} {source_name}")
+        print(f"{Colors.BOLD}Directory:{Colors.ENDC} {source_dir}")
+        print()
+        print(f"{Colors.BOLD}Suggested name:{Colors.ENDC} {Colors.GREEN}{default_name}{Colors.ENDC}")
+        print()
+        print(f"{Colors.BOLD}Options:{Colors.ENDC}")
+        print(f" • Press {Colors.GREEN}ENTER{Colors.ENDC} to use suggested name")
+        print(f" • Type custom filename (e.g., 'my_custom_save.sav')")
+        print(f" • Type {Colors.FAIL}q{Colors.ENDC} to cancel operation")
+        print()
+        
+        user_input = input(f"{Colors.BOLD}Output filename: {Colors.ENDC}").strip()
+        
+        if user_input.lower() == 'q':
+            return None
+        
+        if not user_input:
+            # Use default
+            final_name = default_name
+        else:
+            # Use user input
+            final_name = user_input
+            if not final_name.lower().endswith('.sav'):
+                final_name += '.sav'
+        
+        # Validate filename
+        invalid_chars = r'\/:*?"<>|'
+        if any(char in final_name for char in invalid_chars):
+            log_error(f"Filename contains invalid characters: {invalid_chars}")
+            input(f"{Colors.BOLD}Press Enter to try again...{Colors.ENDC}")
+            continue
+        
+        # Build full path
+        full_path = os.path.join(source_dir, final_name)
+        
+        # Check if file exists
+        if os.path.exists(full_path):
+            print(f"\n{Colors.WARNING}{Colors.BOLD}⚠ File already exists!{Colors.ENDC}")
+            print(f"  Name: {final_name}")
+            print(f"  Path: {full_path}")
+            
+            try:
+                stat = os.stat(full_path)
+                size_mb = stat.st_size / (1024 * 1024)
+                modified = datetime.fromtimestamp(stat.st_mtime).strftime("%Y-%m-%d %H:%M")
+                print(f"  Size: {size_mb:.1f} MB")
+                print(f"  Modified: {modified}")
+            except (OSError, PermissionError):
+                pass
+            
+            print()
+            if not get_yes_no(f"{Colors.BOLD}Overwrite existing file? (y/n): {Colors.ENDC}", default='n'):
+                input(f"{Colors.BOLD}Press Enter to choose different name...{Colors.ENDC}")
+                continue
+        
+        # Return validated path
+        return full_path
+
+def get_save_path_interactive(config):
+    """Enhanced interactive path selection with directory browsing."""
+    print_header("Save File Selection")
+    
+    # Show current/last used path
+    if config.get('default_save_path'):
+        print(f"{Colors.BOLD}Last used:{Colors.ENDC}")
+        print(f"  {Colors.GREEN}{config['default_save_path']}{Colors.ENDC}\n")
+    
+    # Show recent saves if available
+    recent = config.get('recent_saves', [])
+    if recent:
+        print(f"{Colors.BOLD}Recent files:{Colors.ENDC}")
+        for i, path in enumerate(recent[:5], 1):
+            print(f"  [{i}] {os.path.basename(path)}")
+        print()
+    
+    # Show options
+    print(f"{Colors.BOLD}Options:{Colors.ENDC}")
+    print(f"  [1] Use last path")
+    print(f"  [2] Browse save directory")
+    print(f"  [3] Enter custom path")
+    print(f"  [0] Exit")
+    print()
+    
+    while True:
+        try:
+            choice = input(f"{Colors.BOLD}Your choice: {Colors.ENDC}").strip()
+            
+            if choice == '0':
+                sys.exit(0)
+            elif choice == '1':
+                if config.get('default_save_path'):
+                    return config['default_save_path']
+                else:
+                    log_error("No last path available")
+                    continue
+            elif choice == '2':
+                # Browse directory
+                save_dir = config.get('save_directory', '')
+                if not save_dir or not os.path.exists(save_dir):
+                    log_warning("Save directory not configured or not found")
+                    save_dir = input(f"{Colors.BOLD}Enter save directory path: {Colors.ENDC}").strip()
+                    save_dir = save_dir.replace('"', '').replace("'", "")
+                    
+                    if not os.path.exists(save_dir):
+                        log_error(f"Directory not found: {save_dir}")
+                        continue
+                    
+                    # Update config
+                    config['save_directory'] = save_dir
+                
+                # Browse files
+                show_modified = config.get('show_modified_in_browser', True)
+                files = browse_saves_directory(save_dir, show_modified)
+                
+                if not files:
+                    log_error(f"No save files found in {save_dir}")
+                    continue
+                
+                allow_arrows = config.get('enable_arrow_navigation', True)
+                selected = select_file_interactive(files, allow_arrows)
+                
+                if selected:
+                    return selected
+                else:
+                    continue
+            elif choice == '3':
+                # Custom path
+                new_path = input(f"{Colors.BOLD}Enter save file path: {Colors.ENDC}").strip()
+                new_path = new_path.replace('"', '').replace("'", "")
+                return new_path
+            else:
+                log_error("Please enter 0, 1, 2, or 3")
+        except KeyboardInterrupt:
+            sys.exit(0)
+        except Exception as e:
+            log_error(f"Error: {e}")
+            continue

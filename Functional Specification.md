@@ -6,6 +6,20 @@ To provide a utility for *Call to Arms: Gates of Hell* that identifies high-leve
 
 ## **2. User Interaction Flow (Actual Implementation)**
 
+### **Step 0: Save File Selection (Enhanced)**
+
+* **Initial Options:**
+  * [1] Use last save file (if available)
+  * [2] Browse save directory
+  * [3] Enter custom path
+* **Browse Mode (Option 2):**
+  * Lists all `.sav` files in configured `save_directory`
+  * Shows file metadata: size, modification date
+  * User can select by number OR arrow keys (if available)
+  * Arrow key navigation: ↑/↓ to move, Enter to select, Esc to cancel
+  * Falls back to numbered selection if `readchar` unavailable
+* **Output:** Validated save file path ready for processing
+
 ### **Step 1: Squad Discovery & Selection**
 
 * **Action:** The script scans the `campaign.scn` file for the `{CampaignSquads}` block and extracts all squads.
@@ -44,14 +58,35 @@ To provide a utility for *Call to Arms: Gates of Hell* that identifies high-leve
 * **Output:** Confirmation of selections with visual pairing
 * **Input:** Comma-separated numbers of veteran candidates (e.g., `2, 4, 7`)
 
-### **Step 5: Transfer Manifest & Execution**
+### **Step 5: Transfer Manifest & Review**
+
+* **Action:** Shows side-by-side comparison of planned swaps in "Transfer Manifest"
+* **Visualization:** Clear OUT/IN arrows with color coding (RED for out, GREEN for in)
+* **Confirmation:** Final user approval before execution
+* **Output:** User confirms transfer plan before proceeding
+
+### **Step 6: Output File Selection**
+
+* **Operation:** User chooses name for modified save file
+* **Default Suggestion:** `{original}_MOD_{HHMM}.sav` (timestamp format)
+* **User Options:**
+  * Press Enter to accept default name
+  * Type custom filename (extension optional, `.sav` auto-added)
+  * Invalid characters (\/:*?"<>|) are rejected with feedback
+* **Overwrite Protection:**
+  * If file already exists, shows warning with file details
+  * Requires explicit "yes" confirmation to overwrite
+  * Cancelling returns to name entry
+* **Output Location:** Same directory as source file
+
+### **Step 7: Finalizing & Execution**
 
 * **Action:** Shows side-by-side comparison of planned swaps in "Transfer Manifest"
 * **Visualization:** Clear OUT/IN arrows with color coding (RED for out, GREEN for in)
 * **Confirmation:** Final user approval before execution
 * **Execution:** Performs surgical ID swap ONLY within `{CampaignSquads}` block
 * **Cleanup:** Removes `{mods}` modifications from `status.chs` file
-* **Output:** Creates new timestamped save file (`{original}_MOD_HHMM.sav`)
+* **Output:** Creates user-named save file in same directory
 * **Safety:** Original save file is NEVER modified
 
 ## **3. Core Features & Validation Logic**
@@ -117,6 +152,9 @@ Stores persistent user settings:
 * `save_directory`: Root directory for save files (e.g., game profiles folder)
 * `recent_saves`: List of 5 most recently accessed saves for quick selection
 * `max_candidates`: How many scout results to show (default: 100)
+* `enable_arrow_navigation`: Boolean to enable arrow key file selection (default: true)
+* `output_filename_pattern`: Template for suggested output names (default: `{original}_MOD_{timestamp}`)
+* `show_modified_in_browser`: Boolean to include `_MOD_*.sav` files when browsing (default: true)
 * `strict_role_matching`: Boolean for strict vs. loose role compatibility (future enhancement)
 * `auto_backup`: Create `.sav.bak` file before modification (future enhancement)
 
@@ -137,13 +175,19 @@ Stores persistent user settings:
 ### **A. Backup Policy**
 * **Original File:** NEVER modified, always preserved in original state
 * **Backup Creation:** Optional `.sav.bak` creation before processing (configurable)
-* **Output File:** New timestamped file: `{original_filename}_MOD_{HHMM}.sav`
+* **Output File:** User-named file with optional timestamp pattern
 * **Clear Distinction:** Modified saves easily distinguishable from originals
 
-### **B. File Naming Convention**
-* **Format:** `conquest 27_MOD_1430.sav` (includes hour/minute timestamp)
-* **Multiple Modifications:** Allows multiple modifications per session without overwriting
-* **User Clarity:** Clear visual indication of modified status in filename
+### **B. File Naming & User Control**
+* **Default Suggestion:** `{original_filename}_MOD_{HHMM}.sav` (timestamp format)
+* **User Override:** Full custom name allowed (validates against illegal characters)
+* **Automatic Extension:** Adds `.sav` if user omits it
+* **Overwrite Protection:** 
+  * Always checks for existing files
+  * Shows file size and modification date of existing file
+  * Requires explicit "yes" confirmation to overwrite
+  * User can cancel and choose different name
+* **Output Directory:** Always matches source file directory (no cross-directory saving)
 
 ### **C. Cleanup Options (Future Enhancement)**
 * List all `*_MOD_*.sav` files in directory

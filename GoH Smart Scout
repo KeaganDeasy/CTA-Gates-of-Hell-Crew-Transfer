@@ -248,7 +248,17 @@ def main():
         log_success("Operation cancelled by user")
         sys.exit(0)
 
-    print_header("Step 6: Finalizing")
+    # Get output filename from user
+    print_header("Step 6: Output File Selection")
+    from cli_utils import get_output_filename
+    output_pattern = config.get('output_filename_pattern', '{original}_MOD_{timestamp}')
+    output_path = get_output_filename(sav_path, output_pattern)
+    
+    if not output_path:
+        log_success("Operation cancelled by user")
+        sys.exit(0)
+
+    print_header("Step 7: Finalizing")
     
     # Create temp directory for processing
     temp_dir = tempfile.mkdtemp(prefix="goh_")
@@ -297,8 +307,8 @@ def main():
             with open(status_file, 'wb') as f:
                 f.write(clean_status_mods(raw.decode(s_enc, errors='ignore')).encode(s_enc))
         
-        # Create new save file
-        new_sav_path = f"{os.path.splitext(sav_path)[0]}_MOD_{datetime.now().strftime('%H%M')}.sav"
+        # Create new save file using user-selected name
+        new_sav_path = output_path
         with zipfile.ZipFile(new_sav_path, 'w', zipfile.ZIP_DEFLATED) as z:
             for root, dirs, files in os.walk(temp_dir):
                 for file in files:
@@ -307,6 +317,7 @@ def main():
         
         shutil.rmtree(temp_dir, ignore_errors=True)
         print(f"\n{Colors.GREEN}{Colors.BOLD}SUCCESS!{Colors.ENDC}\nCreated: {os.path.basename(new_sav_path)}")
+        print(f"Full path: {new_sav_path}")
         
     except Exception as e:
         log_error(f"Error during finalization: {e}")

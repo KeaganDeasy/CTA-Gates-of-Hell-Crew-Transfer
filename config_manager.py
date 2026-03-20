@@ -11,8 +11,11 @@ DEFAULT_CONFIG = {
     "save_directory": "",
     "recent_saves": [],
     "max_candidates": 100,
-    "auto_backup": False,
-    "strict_role_matching": False
+    "enable_arrow_navigation": True,
+    "output_filename_pattern": "{original}_MOD_{timestamp}",
+    "show_modified_in_browser": True,
+    "strict_role_matching": False,
+    "auto_backup": False
 }
 
 def load_config():

@@ -6,6 +6,9 @@
     "C:\\Users\\%user%\\AppData\\Local\\digitalmindsoft\\gates of hell\\profiles\\298552343\\campaign\\conquest 27.sav"
   ],
   "max_candidates": 100,
-  "auto_backup": false,
-  "strict_role_matching": false
+  "enable_arrow_navigation": true,
+  "output_filename_pattern": "{original}_MOD_{timestamp}",
+  "show_modified_in_browser": true,
+  "strict_role_matching": false,
+  "auto_backup": false
 }
