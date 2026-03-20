@@ -1,0 +1,207 @@
+import os
+import re
+import shutil
+import zipfile
+import sys
+import tempfile
+from datetime import datetime
+
+# Import separated CLI functions
+try:
+    from cli_utils import Colors, print_header, print_manifest, get_status_tag
+except ImportError:
+    # Fallback if file isn't found in current directory
+    class Colors:
+        HEADER = BLUE = GREEN = WARNING = FAIL = ENDC = BOLD = ''
+    def print_header(text): print(f"\n=== {text} ===\n")
+    def get_status_tag(exp): return ""
+    def print_manifest(r, v):
+        l = []
+        for i in range(len(r)):
+            l.append((r[i][0], v[i]['id']))
+            print(f"{r[i][0]} <-> {v[i]['id']}")
+        return l
+
+# ==========================================
+# CONFIGURATION
+# ==========================================
+DEFAULT_SAV_PATH = r"C:\Users\keaga\AppData\Local\digitalmindsoft\gates of hell\profiles\298552343\campaign\conquest 27.sav"
+MAX_CANDIDATES_TO_SHOW = 100 
+
+# ==========================================
+# CORE LOGIC FUNCTIONS
+# ==========================================
+def get_block_fast(text, start_index):
+    """Lightning-fast brace matcher that prevents MemoryErrors."""
+    brace_count = 0
+    in_block = False
+    regex = re.compile(r'[{}]')
+    for match in regex.finditer(text, start_index):
+        char = match.group(0)
+        if char == '{':
+            brace_count += 1
+            in_block = True
+        elif char == '}':
+            brace_count -= 1
+        if in_block and brace_count == 0:
+            return text[start_index : match.end()]
+    return ""
+
+def surgical_batch_swap(full_text, swap_list):
+    """Locates the CampaignSquads block and swaps multiple IDs ONLY within that section."""
+    squads_match = re.search(r'\{\s*CampaignSquads\b', full_text, re.IGNORECASE)
+    if not squads_match:
+        print(f"{Colors.FAIL}Error: Could not find CampaignSquads list.{Colors.ENDC}")
+        return full_text
+
+    start_idx = squads_match.start()
+    squads_block_full = get_block_fast(full_text, start_idx)
+    if not squads_block_full: return full_text
+
+    new_block = squads_block_full
+    for rookie_id, veteran_id in swap_list:
+        temp_id = f"0xTEMP_SWAP_{rookie_id[2:]}"
+        new_block = re.sub(r'(?i)\b' + re.escape(rookie_id) + r'\b', temp_id, new_block)
+        new_block = re.sub(r'(?i)\b' + re.escape(veteran_id) + r'\b', rookie_id, new_block)
+        new_block = re.sub(r'(?i)\b' + re.escape(temp_id) + r'\b', veteran_id, new_block)
+        print(f" • {Colors.GREEN}Surgical Swap:{Colors.ENDC} {rookie_id} <-> {veteran_id}")
+    
+    return full_text[:start_idx] + new_block + full_text[start_idx + len(squads_block_full):]
+
+def clean_status_mods(status_text):
+    """Finds the {mods ...} block and empties it."""
+    pattern = re.compile(r'(\{mods\s*).*?(\s*\})', re.DOTALL | re.IGNORECASE)
+    return pattern.sub(r'\1\2', status_text)
+
+def parse_save_data(scn_text):
+    """Indexes all entities and their veterancy level."""
+    entity_map, squads = {}, []
+    regex_entity = r'\{\s*(?:Entity|Human|Vehicle)\s+["\']?([^"\'\{\}\s]+)["\']?\s+(0x[0-9a-fA-F]+)'
+    for match in re.finditer(regex_entity, scn_text, re.IGNORECASE):
+        breed, hex_id = match.group(1).strip(), match.group(2)
+        hex_lower = hex_id.lower() 
+        if hex_lower in entity_map: continue
+        block = get_block_fast(scn_text, match.start())
+        if not block: continue
+        exp_match = re.search(r'\{(?:Veterancy|Experience|exp|level)\s+["\']?([\d\.]+)["\']?\}', block, re.IGNORECASE)
+        entity_map[hex_lower] = {'original_id': hex_id, 'breed': breed, 'exp': float(exp_match.group(1)) if exp_match else 0.0}
+
+    squads_match = re.search(r'\{\s*CampaignSquads\b', scn_text, re.IGNORECASE)
+    if not squads_match: return entity_map, squads
+    squads_block = get_block_fast(scn_text, squads_match.start())
+
+    squad_counter = 1
+    for inner_block in re.finditer(r'\{([^{}]+)\}', squads_block):
+        content = inner_block.group(1)
+        squad_ids = re.findall(r'(0x[0-9a-fA-F]+)', content)
+        if squad_ids:
+            all_strings = re.findall(r'["\'](.*?)["\']', content)
+            squad_name, actual_members, max_squad_exp = all_strings[0] if all_strings else "Unknown_Squad", [], 0.0
+            for cid in squad_ids:
+                if cid.lower() in entity_map:
+                    actual_members.append(cid) 
+                    max_squad_exp = max(max_squad_exp, entity_map[cid.lower()]['exp'])
+            if actual_members:
+                squads.append({'display_id': f"SQ-{squad_counter:03d}", 'name': squad_name, 'max_exp': max_squad_exp, 'member_ids': actual_members})
+                squad_counter += 1
+    return entity_map, squads
+
+# ==========================================
+# MAIN WORKFLOW
+# ==========================================
+def main():
+    print_header("GoH Crew Role-Safe Transfer Tool")
+    print(f"Smart Scout Edition (Batch Mode - Split Context)\n")
+    
+    sav_path = DEFAULT_SAV_PATH
+    print(f"• Target Save: {Colors.WARNING}{os.path.basename(sav_path)}{Colors.ENDC}\n")
+    if input(f"{Colors.BOLD}Change target? (y/n): {Colors.ENDC}").strip().lower() == 'y':
+        sav_path = input(f"{Colors.BOLD}New path: {Colors.ENDC}").strip().replace('"', '').replace("'", "")
+    
+    if not os.path.exists(sav_path):
+        print(f"\n{Colors.FAIL}Error: Not found.{Colors.ENDC}"); sys.exit(1)
+
+    print_header("Step 1: Unpacking & Indexing")
+    temp_dir = tempfile.mkdtemp(prefix="goh_")
+    scn_filename = status_filename = None
+    
+    try:
+        with zipfile.ZipFile(sav_path, 'r') as z:
+            for name in z.namelist():
+                if any(x in name.lower() for x in ['campaign.scn', 'campaign.scm']): scn_filename = name
+                if 'status' in name.lower(): status_filename = name
+            z.extractall(temp_dir)
+    except: sys.exit(1)
+        
+    scn_filepath = os.path.join(temp_dir, scn_filename)
+    with open(scn_filepath, 'rb') as f:
+        data = f.read()
+    if data.startswith(b'\xff\xfe'): scn_text, scn_encoding = data.decode('utf-16-le', errors='ignore'), 'utf-16-le'
+    elif data.startswith(b'\xfe\xff'): scn_text, scn_encoding = data.decode('utf-16-be', errors='ignore'), 'utf-16-be'
+    else: scn_text, scn_encoding = data.decode('utf-8', errors='ignore'), 'utf-8'
+        
+    scn_text = scn_text.replace('\x00', '')
+    entity_map, squads = parse_save_data(scn_text)
+    cid_to_squad_name = {cid.lower(): sq['name'] for sq in squads for cid in sq['member_ids']}
+
+    print_header("Step 2: Squad Selection")
+    squads.sort(key=lambda x: x['max_exp'], reverse=True)
+    for i, sq in enumerate(squads):
+        print(f" [{i+1}] {sq['name']} (Max Veterancy: {sq['max_exp']:.1f}) - {get_status_tag(sq['max_exp'])}")
+        
+    target_squad = squads[int(input(f"\n{Colors.BOLD}Select target squad: {Colors.ENDC}")) - 1]
+
+    print_header(f"Step 3: Managing {target_squad['name']}")
+    current_crew = []
+    for i, cid in enumerate(target_squad['member_ids']):
+        h = entity_map.get(cid.lower())
+        if h:
+            current_crew.append((cid, h['exp'], h['breed']))
+            print(f" [{i+1}] {cid} | {h['breed']} (Veterancy: {h['exp']:.1f})")
+            
+    rookie_indices = [int(x.strip()) - 1 for x in input(f"\n{Colors.BOLD}Numbers (e.g. 1, 2): {Colors.ENDC}").split(',')]
+    selected_rookies = [current_crew[idx] for idx in rookie_indices]
+
+    print_header("Step 4: Scout Report")
+    candidates = []
+    role_key = selected_rookies[0][2].split("_")[-1].split("(")[0]
+    for hid_lower, h in entity_map.items():
+        if hid_lower not in [c.lower() for c in target_squad['member_ids']] and ('(' in h['breed'] or hid_lower in cid_to_squad_name):
+            candidates.append({'id': h['original_id'], 'breed': h['breed'], 'exp': h['exp'], 'role_match': role_key in h['breed'], 'squad': cid_to_squad_name.get(hid_lower, "Reserve")})
+    candidates.sort(key=lambda x: (-x['exp'], not x['role_match']))
+    top_cands = candidates[:MAX_CANDIDATES_TO_SHOW]
+    for i, c in enumerate(top_cands):
+        print(f" [{i+1}] {c['id']} | {c['breed']} (Exp: {c['exp']:.1f}) [In: {c['squad']}] {'[Role Match]' if c['role_match'] else ''}")
+        
+    vet_indices = [int(x.strip()) - 1 for x in input(f"\n{Colors.BOLD}Select {len(selected_rookies)} veterans: {Colors.ENDC}").split(',')]
+    selected_vets = [top_cands[idx] for idx in vet_indices]
+
+    if len(selected_rookies) != len(selected_vets): sys.exit(1)
+
+    swap_list = print_manifest(selected_rookies, selected_vets)
+    if input(f"\n{Colors.BOLD}Execute? (y/n): {Colors.ENDC}").strip().lower() != 'y': sys.exit(0)
+
+    print_header("Step 5: Finalizing")
+    new_scn_text = surgical_batch_swap(scn_text, swap_list)
+    with open(scn_filepath, 'wb') as f:
+        f.write(new_scn_text.encode(scn_encoding))
+        f.flush(); os.fsync(f.fileno())
+    
+    if status_filename:
+        status_filepath = os.path.join(temp_dir, status_filename)
+        with open(status_filepath, 'rb') as f: raw = f.read()
+        s_enc = 'utf-16-le' if raw.startswith(b'\xff\xfe') else 'utf-8'
+        with open(status_filepath, 'wb') as f: f.write(clean_status_mods(raw.decode(s_enc, errors='ignore')).encode(s_enc))
+
+    new_sav_path = f"{os.path.splitext(sav_path)[0]}_MOD_{datetime.now().strftime('%H%M')}.sav"
+    with zipfile.ZipFile(new_sav_path, 'w', zipfile.ZIP_DEFLATED) as z:
+        for root, dirs, files in os.walk(temp_dir):
+            for file in files:
+                fp = os.path.join(root, file); z.write(fp, os.path.relpath(fp, temp_dir))
+    
+    shutil.rmtree(temp_dir, ignore_errors=True)
+    print(f"\n{Colors.GREEN}{Colors.BOLD}SUCCESS!{Colors.ENDC}\nCreated: {os.path.basename(new_sav_path)}")
+
+if __name__ == "__main__":
+    try: main()
+    except KeyboardInterrupt: sys.exit(0)
