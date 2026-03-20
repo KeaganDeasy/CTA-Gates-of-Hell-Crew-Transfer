@@ -1,0 +1,25 @@
+# User configuration
+config.json
+
+# Modified save files (prevent accidental commits)
+*_MOD_*.sav
+
+# Python cache
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# Backup files
+*.bak
+*.tmp
+
+# IDE/Editor files
+.vscode/
+.idea/
+*.swp
+*~
+
+# OS files
+.DS_Store
+Thumbs.db

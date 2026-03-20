@@ -8,7 +8,15 @@ from datetime import datetime
 
 # Import separated CLI functions
 try:
-    from cli_utils import Colors, print_header, print_manifest, get_status_tag
+    from cli_utils import (
+        Colors, print_header, print_manifest, get_status_tag,
+        get_valid_integer, get_valid_indices, get_yes_no,
+        get_save_path_interactive, display_validation_errors,
+        display_validation_success, log_error, log_success,
+        display_squad_list, display_crew_members, display_candidates
+    )
+    from config_manager import load_config, save_config, update_recent_saves
+    from file_validator import validate_save_file, validate_campaign_structure, extract_scn_from_zip
 except ImportError:
     # Fallback if file isn't found in current directory
     class Colors:
@@ -21,12 +29,44 @@ except ImportError:
             l.append((r[i][0], v[i]['id']))
             print(f"{r[i][0]} <-> {v[i]['id']}")
         return l
-
-# ==========================================
-# CONFIGURATION
-# ==========================================
-DEFAULT_SAV_PATH = r"C:\Users\keaga\AppData\Local\digitalmindsoft\gates of hell\profiles\298552343\campaign\conquest 27.sav"
-MAX_CANDIDATES_TO_SHOW = 100 
+    # Fallback for new functions
+    def get_valid_integer(prompt, min_val, max_val):
+        try:
+            return int(input(prompt).strip())
+        except ValueError:
+            sys.exit(1)
+    def get_valid_indices(prompt, max_index, required_count=None):
+        try:
+            return [int(x.strip()) - 1 for x in input(prompt).split(',')]
+        except ValueError:
+            sys.exit(1)
+    def get_yes_no(prompt, default='n'):
+        return input(prompt).strip().lower() in ['y', 'yes']
+    def get_save_path_interactive(config):
+        return input("Enter save file path: ").strip()
+    def display_validation_errors(errors):
+        for err in errors:
+            print(f"Error: {err}")
+    def display_validation_success():
+        print("Validation successful")
+    def log_error(msg): print(f"Error: {msg}")
+    def log_success(msg): print(f"Success: {msg}")
+    def display_squad_list(squads):
+        for i, sq in enumerate(squads):
+            print(f" [{i+1}] {sq['name']} (Max Veterancy: {sq['max_exp']:.1f})")
+    def display_crew_members(current_crew):
+        for i, (cid, exp, breed) in enumerate(current_crew):
+            print(f" [{i+1}] {cid} | {breed} (Veterancy: {exp:.1f})")
+    def display_candidates(candidates):
+        for i, cand in enumerate(candidates):
+            print(f" [{i+1}] {cand['id']} | {cand['breed']} (Exp: {cand['exp']:.1f})")
+    # Fallback for config and validation
+    def load_config(): return {}
+    def save_config(config): return True, None
+    def update_recent_saves(config, path): return config
+    def validate_save_file(path): return True, []
+    def validate_campaign_structure(text): return True, None
+    def extract_scn_from_zip(path): return False, None, None, "Fallback mode"
 
 # ==========================================
 # CORE LOGIC FUNCTIONS
@@ -113,94 +153,165 @@ def main():
     print_header("GoH Crew Role-Safe Transfer Tool")
     print(f"Smart Scout Edition (Batch Mode - Split Context)\n")
     
-    sav_path = DEFAULT_SAV_PATH
-    print(f"• Target Save: {Colors.WARNING}{os.path.basename(sav_path)}{Colors.ENDC}\n")
-    if input(f"{Colors.BOLD}Change target? (y/n): {Colors.ENDC}").strip().lower() == 'y':
-        sav_path = input(f"{Colors.BOLD}New path: {Colors.ENDC}").strip().replace('"', '').replace("'", "")
+    # Load configuration
+    config = load_config()
     
-    if not os.path.exists(sav_path):
-        print(f"\n{Colors.FAIL}Error: Not found.{Colors.ENDC}"); sys.exit(1)
-
-    print_header("Step 1: Unpacking & Indexing")
-    temp_dir = tempfile.mkdtemp(prefix="goh_")
-    scn_filename = status_filename = None
+    # Get save path with interactive selection
+    sav_path = get_save_path_interactive(config)
     
-    try:
-        with zipfile.ZipFile(sav_path, 'r') as z:
-            for name in z.namelist():
-                if any(x in name.lower() for x in ['campaign.scn', 'campaign.scm']): scn_filename = name
-                if 'status' in name.lower(): status_filename = name
-            z.extractall(temp_dir)
-    except: sys.exit(1)
-        
-    scn_filepath = os.path.join(temp_dir, scn_filename)
-    with open(scn_filepath, 'rb') as f:
-        data = f.read()
-    if data.startswith(b'\xff\xfe'): scn_text, scn_encoding = data.decode('utf-16-le', errors='ignore'), 'utf-16-le'
-    elif data.startswith(b'\xfe\xff'): scn_text, scn_encoding = data.decode('utf-16-be', errors='ignore'), 'utf-16-be'
-    else: scn_text, scn_encoding = data.decode('utf-8', errors='ignore'), 'utf-8'
-        
-    scn_text = scn_text.replace('\x00', '')
+    # Validate save file
+    print_header("Step 1: Save File Validation")
+    valid, errors = validate_save_file(sav_path)
+    if not valid:
+        display_validation_errors(errors)
+        sys.exit(1)
+    display_validation_success()
+    
+    # Update config with new path
+    config['default_save_path'] = sav_path
+    update_recent_saves(config, sav_path)
+    success, error = save_config(config)
+    if not success:
+        log_error(f"Could not save configuration: {error}")
+    
+    # Extract and decode campaign.scn
+    print_header("Step 2: Unpacking & Indexing")
+    success, scn_text, scn_encoding, error = extract_scn_from_zip(sav_path)
+    if not success:
+        log_error(f"Failed to extract campaign.scn: {error}")
+        sys.exit(1)
+    
+    # Validate campaign structure
+    valid, error = validate_campaign_structure(scn_text)
+    if not valid:
+        log_error(f"Invalid campaign structure: {error}")
+        sys.exit(1)
+    
+    # Parse data
     entity_map, squads = parse_save_data(scn_text)
+    if not squads:
+        log_error("No squads found in save file")
+        sys.exit(1)
+    
     cid_to_squad_name = {cid.lower(): sq['name'] for sq in squads for cid in sq['member_ids']}
+    
+    # Get max candidates from config
+    max_candidates = config.get('max_candidates', 100)
 
-    print_header("Step 2: Squad Selection")
+    print_header("Step 3: Squad Selection")
     squads.sort(key=lambda x: x['max_exp'], reverse=True)
-    for i, sq in enumerate(squads):
-        print(f" [{i+1}] {sq['name']} (Max Veterancy: {sq['max_exp']:.1f}) - {get_status_tag(sq['max_exp'])}")
-        
-    target_squad = squads[int(input(f"\n{Colors.BOLD}Select target squad: {Colors.ENDC}")) - 1]
+    display_squad_list(squads)
+    
+    squad_idx = get_valid_integer(
+        f"\n{Colors.BOLD}Select target squad: {Colors.ENDC}",
+        min_val=1,
+        max_val=len(squads)
+    )
+    target_squad = squads[squad_idx - 1]
 
-    print_header(f"Step 3: Managing {target_squad['name']}")
+    print_header(f"Step 4: Managing {target_squad['name']}")
     current_crew = []
     for i, cid in enumerate(target_squad['member_ids']):
         h = entity_map.get(cid.lower())
         if h:
             current_crew.append((cid, h['exp'], h['breed']))
-            print(f" [{i+1}] {cid} | {h['breed']} (Veterancy: {h['exp']:.1f})")
-            
-    rookie_indices = [int(x.strip()) - 1 for x in input(f"\n{Colors.BOLD}Numbers (e.g. 1, 2): {Colors.ENDC}").split(',')]
+    
+    display_crew_members(current_crew)
+    
+    rookie_indices = get_valid_indices(
+        f"\n{Colors.BOLD}Select crew to replace (e.g. 1, 2, 3): {Colors.ENDC}",
+        max_index=len(current_crew)
+    )
     selected_rookies = [current_crew[idx] for idx in rookie_indices]
 
-    print_header("Step 4: Scout Report")
+    print_header("Step 5: Scout Report")
     candidates = []
-    role_key = selected_rookies[0][2].split("_")[-1].split("(")[0]
-    for hid_lower, h in entity_map.items():
-        if hid_lower not in [c.lower() for c in target_squad['member_ids']] and ('(' in h['breed'] or hid_lower in cid_to_squad_name):
-            candidates.append({'id': h['original_id'], 'breed': h['breed'], 'exp': h['exp'], 'role_match': role_key in h['breed'], 'squad': cid_to_squad_name.get(hid_lower, "Reserve")})
+    if selected_rookies:
+        role_key = selected_rookies[0][2].split("_")[-1].split("(")[0]
+        for hid_lower, h in entity_map.items():
+            if hid_lower not in [c.lower() for c in target_squad['member_ids']] and ('(' in h['breed'] or hid_lower in cid_to_squad_name):
+                candidates.append({'id': h['original_id'], 'breed': h['breed'], 'exp': h['exp'], 'role_match': role_key in h['breed'], 'squad': cid_to_squad_name.get(hid_lower, "Reserve")})
+    
     candidates.sort(key=lambda x: (-x['exp'], not x['role_match']))
-    top_cands = candidates[:MAX_CANDIDATES_TO_SHOW]
-    for i, c in enumerate(top_cands):
-        print(f" [{i+1}] {c['id']} | {c['breed']} (Exp: {c['exp']:.1f}) [In: {c['squad']}] {'[Role Match]' if c['role_match'] else ''}")
-        
-    vet_indices = [int(x.strip()) - 1 for x in input(f"\n{Colors.BOLD}Select {len(selected_rookies)} veterans: {Colors.ENDC}").split(',')]
+    top_cands = candidates[:max_candidates]
+    display_candidates(top_cands)
+    
+    vet_indices = get_valid_indices(
+        f"\n{Colors.BOLD}Select {len(selected_rookies)} veterans: {Colors.ENDC}",
+        max_index=len(top_cands),
+        required_count=len(selected_rookies)
+    )
     selected_vets = [top_cands[idx] for idx in vet_indices]
 
-    if len(selected_rookies) != len(selected_vets): sys.exit(1)
-
     swap_list = print_manifest(selected_rookies, selected_vets)
-    if input(f"\n{Colors.BOLD}Execute? (y/n): {Colors.ENDC}").strip().lower() != 'y': sys.exit(0)
+    if not get_yes_no(f"\n{Colors.BOLD}Execute? (y/n): {Colors.ENDC}", default='n'):
+        log_success("Operation cancelled by user")
+        sys.exit(0)
 
-    print_header("Step 5: Finalizing")
-    new_scn_text = surgical_batch_swap(scn_text, swap_list)
-    with open(scn_filepath, 'wb') as f:
-        f.write(new_scn_text.encode(scn_encoding))
-        f.flush(); os.fsync(f.fileno())
+    print_header("Step 6: Finalizing")
     
-    if status_filename:
-        status_filepath = os.path.join(temp_dir, status_filename)
-        with open(status_filepath, 'rb') as f: raw = f.read()
-        s_enc = 'utf-16-le' if raw.startswith(b'\xff\xfe') else 'utf-8'
-        with open(status_filepath, 'wb') as f: f.write(clean_status_mods(raw.decode(s_enc, errors='ignore')).encode(s_enc))
-
-    new_sav_path = f"{os.path.splitext(sav_path)[0]}_MOD_{datetime.now().strftime('%H%M')}.sav"
-    with zipfile.ZipFile(new_sav_path, 'w', zipfile.ZIP_DEFLATED) as z:
+    # Create temp directory for processing
+    temp_dir = tempfile.mkdtemp(prefix="goh_")
+    
+    try:
+        # Extract entire save file
+        with zipfile.ZipFile(sav_path, 'r') as z:
+            z.extractall(temp_dir)
+        
+        # Find campaign.scn file
+        scn_filename = None
         for root, dirs, files in os.walk(temp_dir):
             for file in files:
-                fp = os.path.join(root, file); z.write(fp, os.path.relpath(fp, temp_dir))
-    
-    shutil.rmtree(temp_dir, ignore_errors=True)
-    print(f"\n{Colors.GREEN}{Colors.BOLD}SUCCESS!{Colors.ENDC}\nCreated: {os.path.basename(new_sav_path)}")
+                if any(x in file.lower() for x in ['campaign.scn', 'campaign.scm']):
+                    scn_filename = os.path.join(root, file)
+                    break
+            if scn_filename:
+                break
+        
+        if not scn_filename:
+            log_error("Could not find campaign.scn in extracted files")
+            shutil.rmtree(temp_dir, ignore_errors=True)
+            sys.exit(1)
+        
+        # Apply surgical swap
+        new_scn_text = surgical_batch_swap(scn_text, swap_list)
+        with open(scn_filename, 'wb') as f:
+            f.write(new_scn_text.encode(scn_encoding))
+            f.flush()
+            os.fsync(f.fileno())
+        
+        # Clean status.chs if present
+        status_file = None
+        for root, dirs, files in os.walk(temp_dir):
+            for file in files:
+                if 'status' in file.lower():
+                    status_file = os.path.join(root, file)
+                    break
+            if status_file:
+                break
+        
+        if status_file:
+            with open(status_file, 'rb') as f:
+                raw = f.read()
+            s_enc = 'utf-16-le' if raw.startswith(b'\xff\xfe') else 'utf-8'
+            with open(status_file, 'wb') as f:
+                f.write(clean_status_mods(raw.decode(s_enc, errors='ignore')).encode(s_enc))
+        
+        # Create new save file
+        new_sav_path = f"{os.path.splitext(sav_path)[0]}_MOD_{datetime.now().strftime('%H%M')}.sav"
+        with zipfile.ZipFile(new_sav_path, 'w', zipfile.ZIP_DEFLATED) as z:
+            for root, dirs, files in os.walk(temp_dir):
+                for file in files:
+                    fp = os.path.join(root, file)
+                    z.write(fp, os.path.relpath(fp, temp_dir))
+        
+        shutil.rmtree(temp_dir, ignore_errors=True)
+        print(f"\n{Colors.GREEN}{Colors.BOLD}SUCCESS!{Colors.ENDC}\nCreated: {os.path.basename(new_sav_path)}")
+        
+    except Exception as e:
+        log_error(f"Error during finalization: {e}")
+        shutil.rmtree(temp_dir, ignore_errors=True)
+        sys.exit(1)
 
 if __name__ == "__main__":
     try: main()

@@ -1,0 +1,11 @@
+{
+  "version": "1.0",
+  "default_save_path": "C:\\Users\\%user%\\AppData\\Local\\digitalmindsoft\\gates of hell\\profiles\\298552343\\campaign\\conquest 27.sav",
+  "save_directory": "",
+  "recent_saves": [
+    "C:\\Users\\%user%\\AppData\\Local\\digitalmindsoft\\gates of hell\\profiles\\298552343\\campaign\\conquest 27.sav"
+  ],
+  "max_candidates": 100,
+  "auto_backup": false,
+  "strict_role_matching": false
+}
