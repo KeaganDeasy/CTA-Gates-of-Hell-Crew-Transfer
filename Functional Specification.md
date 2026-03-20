@@ -97,13 +97,17 @@ To provide a utility for *Call to Arms: Gates of Hell* that identifies high-leve
 13. **Rebuild:** Create new timestamped `.sav` file with modified contents
 14. **Cleanup:** Remove temporary directory, preserve original save file
 
-## **5. CLI Architecture & Separation**
+## **5. CLI Architecture & Separation** ✅ **IMPLEMENTED v2.0**
 
 * **Modular Design:** CLI formatting functions separated into `cli_utils.py`
 * **Color System:** ADHD-friendly terminal colors with consistent visual language
 * **Header Formatting:** Standardized step headers for clear workflow progression
 * **Fallback Support:** Graceful degradation if `cli_utils.py` is unavailable
 * **Formatting Functions:** Dedicated functions for squad display, candidate formatting, manifest generation
+* **Input Validation:** Comprehensive validation functions in `cli_utils.py` (get_valid_integer, get_valid_indices, get_yes_no)
+* **Path Management:** Interactive path selection with history in `cli_utils.py` (get_save_path_interactive)
+* **Validation Display:** File validation error/success display functions
+* **Enhanced Display:** Dedicated functions for squad, crew, and candidate lists
 
 ## **6. Configuration & Path Management (NEW)**
 
