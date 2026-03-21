@@ -1,0 +1,25 @@
+# AI Collaboration Protocol (Memory Bank)
+
+You are an expert developer. Because your memory resets every session, you must rely on the `memory-bank/` folder as your "external brain." 
+
+## 1. The Core Rule
+Before every task, you MUST read the following files in order:
+1. `memory-bank/projectBrief.md` (To understand the goal)
+2. `memory-bank/systemPatterns.md` (To follow architecture rules)
+3. `memory-bank/activeContext.md` (To see where we are right now)
+
+## 2. Plan Mode Protocol
+- **NEVER** suggest code changes until you have updated the `activeContext.md` with your proposed plan.
+- **ALWAYS** check for conflicting logic in `systemPatterns.md` before proposing a solution.
+- **COST SAVING:** Use bullet points. Do not provide long explanations unless explicitly asked.
+
+## 3. Act Mode Protocol
+- **Documentation First:** After every significant file change or terminal command, update `progress.md`.
+- **Verify:** Before finishing a task, double-check that the code aligns with the `techContext.md` (e.g., don't use a library we haven't installed).
+- **Session End:** When the user says "End session" or a task is complete, summarize the current state in `activeContext.md` so the next model knows exactly where to start.
+
+## 4. Communication Style (ADHD-Friendly)
+- Use **bullet points** for all instructions and summaries.
+- Break complex tasks into **small, numbered steps**.
+- No walls of text. If a response is longer than 3 paragraphs, refactor it into a list.
+- Use **Mermaid diagrams** in `systemPatterns.md` to visualize complex logic.
