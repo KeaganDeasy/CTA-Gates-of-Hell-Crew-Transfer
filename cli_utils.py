@@ -9,6 +9,7 @@ class Colors:
     BG_GREEN = '\033[42m\033[30m' # Green Background with Black Text
     WARNING = '\033[93m'
     FAIL = '\033[91m'
+    MAGENTA = '\033[95m'  # Bright Magenta for high contrast stage tags
     ENDC = '\033[0m'
     BOLD = '\033[1m'
     UNDERLINE = '\033[4m'
@@ -209,7 +210,21 @@ def display_validation_success():
 def display_squad_list(squads):
     """Display formatted squad list (replaces inline printing)."""
     for i, sq in enumerate(squads):
-        print(f" [{i+1}] {sq['name']} (Max Veterancy: {sq['max_exp']:.1f}) - {get_status_tag(sq['max_exp'])}")
+        # Check if squad has a stage tag (e.g., "stage_1", "stage_2", etc.)
+        stage_tag = ""
+        if 'stage' in sq and sq['stage'] and sq['stage'].strip():
+            # Extract stage number from tag like "stage_1" or "Stage_1"
+            # Support formats: "stage_1", "stage1", "Stage_5", "Stage5", etc.
+            stage_lower = sq['stage'].lower().strip()
+            
+            # Try to extract the stage number
+            import re
+            stage_match = re.search(r'stage_?(\d+)', stage_lower)
+            if stage_match:
+                stage_num = stage_match.group(1)
+                stage_tag = f" {Colors.MAGENTA}[Stage {stage_num}]{Colors.ENDC}"
+        
+        print(f" [{i+1}] {sq['name']} (Max Veterancy: {sq['max_exp']:.1f}){stage_tag} - {get_status_tag(sq['max_exp'])}")
 
 def display_crew_members(current_crew):
     """Display formatted crew list using existing format_crew_member."""

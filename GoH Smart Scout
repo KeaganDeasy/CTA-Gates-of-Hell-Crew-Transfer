@@ -136,13 +136,21 @@ def parse_save_data(scn_text):
         squad_ids = re.findall(r'(0x[0-9a-fA-F]+)', content)
         if squad_ids:
             all_strings = re.findall(r'["\'](.*?)["\']', content)
-            squad_name, actual_members, max_squad_exp = all_strings[0] if all_strings else "Unknown_Squad", [], 0.0
+            squad_name = all_strings[0] if len(all_strings) > 0 else "Unknown_Squad"
+            stage_tag = all_strings[1] if len(all_strings) > 1 else ""
+            actual_members, max_squad_exp = [], 0.0
             for cid in squad_ids:
                 if cid.lower() in entity_map:
                     actual_members.append(cid) 
                     max_squad_exp = max(max_squad_exp, entity_map[cid.lower()]['exp'])
             if actual_members:
-                squads.append({'display_id': f"SQ-{squad_counter:03d}", 'name': squad_name, 'max_exp': max_squad_exp, 'member_ids': actual_members})
+                squads.append({
+                    'display_id': f"SQ-{squad_counter:03d}", 
+                    'name': squad_name, 
+                    'stage': stage_tag,
+                    'max_exp': max_squad_exp, 
+                    'member_ids': actual_members
+                })
                 squad_counter += 1
     return entity_map, squads
 
