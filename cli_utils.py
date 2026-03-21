@@ -35,7 +35,7 @@ def log_error(message):
     """Prints an error message with a bullet point."""
     print(f" • {Colors.FAIL}Error: {message}{Colors.ENDC}")
 
-def format_crew_member(index, cid, exp, breed):
+def format_crew_member(index, cid, exp, breed, squad_name=None, stage_tag=None):
     """Formats the current squad members in Step 3 with high visibility."""
     idx_str = f"[{index}]".ljust(6)
     id_str = f"{cid}".ljust(10)
@@ -47,8 +47,22 @@ def format_crew_member(index, cid, exp, breed):
         exp_display = f"{Colors.BLUE}EXP (Lvl {exp:.1f}){Colors.ENDC}"
     else:
         exp_display = f"{Colors.FAIL}ROOKIE (Lvl 0){Colors.ENDC}"
+    
+    # Build squad and stage info
+    squad_info = ""
+    if squad_name:
+        # Extract stage number from stage_tag if present
+        stage_display = ""
+        if stage_tag and stage_tag.strip():
+            import re
+            stage_match = re.search(r'stage_?(\d+)', stage_tag.lower().strip())
+            if stage_match:
+                stage_num = stage_match.group(1)
+                stage_display = f" {Colors.MAGENTA}[Stage {stage_num}]{Colors.ENDC}"
+        
+        squad_info = f" {Colors.BLUE}[SQUAD: {squad_name}]{Colors.ENDC}{stage_display}"
 
-    return f" {idx_str} {id_str} | {breed.ljust(35)} ({exp_display})"
+    return f" {idx_str} {id_str} | {breed.ljust(35)} ({exp_display}){squad_info}"
 
 def format_candidate(index, cand):
     """Returns a formatted string for a candidate in the Scout Report."""
@@ -57,6 +71,15 @@ def format_candidate(index, cand):
     
     # Blue Tag for current location
     squad_tag = f"{Colors.BLUE}[SQUAD: {cand['squad']}]{Colors.ENDC}"
+    
+    # Stage tag if available (similar to format_crew_member)
+    stage_display = ""
+    if 'stage' in cand and cand['stage'] and cand['stage'].strip():
+        import re
+        stage_match = re.search(r'stage_?(\d+)', cand['stage'].lower().strip())
+        if stage_match:
+            stage_num = stage_match.group(1)
+            stage_display = f" {Colors.MAGENTA}[Stage {stage_num}]{Colors.ENDC}"
     
     # Colorize and Label the experience value
     exp_val = cand['exp']
@@ -73,7 +96,7 @@ def format_candidate(index, cand):
     idx_str = f"[{index}]".ljust(6)
     id_str = f"{cand['id']}".ljust(10)
     
-    return f" {idx_str} {id_str} | {cand['breed'].ljust(35)} ({exp_display}) {squad_tag}{match_tag}"
+    return f" {idx_str} {id_str} | {cand['breed'].ljust(35)} ({exp_display}) {squad_tag}{stage_display}{match_tag}"
 
 def print_manifest(selected_rookies, selected_vets):
     """Prints the high-visibility Transfer Manifest (Review Changes)."""
@@ -226,10 +249,10 @@ def display_squad_list(squads):
         
         print(f" [{i+1}] {sq['name']} (Max Veterancy: {sq['max_exp']:.1f}){stage_tag} - {get_status_tag(sq['max_exp'])}")
 
-def display_crew_members(current_crew):
+def display_crew_members(current_crew, squad_name=None, stage_tag=None):
     """Display formatted crew list using existing format_crew_member."""
     for i, (cid, exp, breed) in enumerate(current_crew):
-        print(format_crew_member(i+1, cid, exp, breed))
+        print(format_crew_member(i+1, cid, exp, breed, squad_name, stage_tag))
 
 def display_candidates(candidates):
     """Display formatted candidate list using existing format_candidate."""

@@ -201,7 +201,9 @@ def main():
         log_error("No squads found in save file")
         sys.exit(1)
     
+    # Create mappings for squad name and stage tag
     cid_to_squad_name = {cid.lower(): sq['name'] for sq in squads for cid in sq['member_ids']}
+    cid_to_squad_stage = {cid.lower(): sq['stage'] for sq in squads for cid in sq['member_ids']}
     
     # Get max candidates from config
     max_candidates = config.get('max_candidates', 100)
@@ -224,7 +226,7 @@ def main():
         if h:
             current_crew.append((cid, h['exp'], h['breed']))
     
-    display_crew_members(current_crew)
+    display_crew_members(current_crew, target_squad['name'], target_squad['stage'])
     
     rookie_indices = get_valid_indices(
         f"\n{Colors.BOLD}Select crew to replace (e.g. 1, 2, 3): {Colors.ENDC}",
@@ -238,7 +240,7 @@ def main():
         role_key = selected_rookies[0][2].split("_")[-1].split("(")[0]
         for hid_lower, h in entity_map.items():
             if hid_lower not in [c.lower() for c in target_squad['member_ids']] and ('(' in h['breed'] or hid_lower in cid_to_squad_name):
-                candidates.append({'id': h['original_id'], 'breed': h['breed'], 'exp': h['exp'], 'role_match': role_key in h['breed'], 'squad': cid_to_squad_name.get(hid_lower, "Reserve")})
+                candidates.append({'id': h['original_id'], 'breed': h['breed'], 'exp': h['exp'], 'role_match': role_key in h['breed'], 'squad': cid_to_squad_name.get(hid_lower, "Reserve"), 'stage': cid_to_squad_stage.get(hid_lower, "")})
     
     candidates.sort(key=lambda x: (-x['exp'], not x['role_match']))
     top_cands = candidates[:max_candidates]
